@@ -88,3 +88,29 @@
 
 ;; public functions
 ;;
+(define-public (set-dao-owner (new-owner principal))
+  (begin
+    (asserts! (is-dao-owner) ERR-NOT-AUTHORIZED)
+    (ok (var-set dao-owner new-owner))
+  )
+)
+
+(define-public (add-member (user principal) (stake uint))
+  (begin
+    (asserts! (is-dao-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (>= stake MINIMUM-STAKE) ERR-INSUFFICIENT-STAKE)
+    (map-set members user stake)
+    (var-set total-stake (+ (var-get total-stake) stake))
+    (ok true)
+  )
+)
+
+(define-public (remove-member (user principal))
+  (let ((stake (default-to u0 (map-get? members user))))
+    (asserts! (is-dao-owner) ERR-NOT-AUTHORIZED)
+    (asserts! (is-member user) ERR-NOT-MEMBER)
+    (map-delete members user)
+    (var-set total-stake (- (var-get total-stake) stake))
+    (ok true)
+  )
+)
