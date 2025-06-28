@@ -1,4 +1,3 @@
-
 ;; Stacks-dao-contract
 ;; A DAO governance contract that allows members to create, vote on, and execute proposals
 
@@ -113,4 +112,96 @@
     (var-set total-stake (- (var-get total-stake) stake))
     (ok true)
   )
+)
+
+(define-public (create-proposal (title (string-ascii 100)) (description (string-utf8 500)) 
+                               (link (optional (string-ascii 256)))
+                               (action-contract (optional principal))
+                               (action-function (optional (string-ascii 128)))
+                               (action-args (optional (list 10 (string-utf8 256)))))
+  (let (
+    (proposal-id (+ (var-get proposal-count) u1))
+    (current-block block-height)
+  )
+    (asserts! (is-member tx-sender) ERR-NOT-MEMBER)
+    (map-set proposals
+      { proposal-id: proposal-id }
+      {
+        proposer: tx-sender,
+        title: title,
+        description: description,
+        link: link,
+        created-at-block: current-block,
+        expires-at-block: (+ current-block PROPOSAL-DURATION),
+        yes-votes: u0,
+        no-votes: u0,
+        status: "active",
+        action-contract: action-contract,
+        action-function: action-function,
+        action-args: action-args
+      }
+    )
+    (var-set proposal-count proposal-id)
+    (ok proposal-id)
+  )
+)
+
+(define-public (vote (proposal-id uint) (vote-value bool))
+  (let (
+    (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR-PROPOSAL-NOT-FOUND))
+    (voter-stake (unwrap! (map-get? members tx-sender) ERR-NOT-MEMBER))
+    (vote-key { proposal-id: proposal-id, voter: tx-sender })
+  )
+    (asserts! (is-eq (get status proposal) "active") ERR-PROPOSAL-EXPIRED)
+    (asserts! (<= block-height (get expires-at-block proposal)) ERR-PROPOSAL-EXPIRED)
+    (asserts! (is-none (map-get? votes vote-key)) ERR-ALREADY-VOTED)
+    
+    (map-set votes vote-key { vote: vote-value })
+    
+    (if vote-value
+      (map-set proposals { proposal-id: proposal-id }
+        (merge proposal { yes-votes: (+ (get yes-votes proposal) voter-stake) })
+      )
+      (map-set proposals { proposal-id: proposal-id }
+        (merge proposal { no-votes: (+ (get no-votes proposal) voter-stake) })
+      )
+    )
+    (ok true)
+  )
+)
+
+(define-public (execute-proposal (proposal-id uint))
+  (let (
+    (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR-PROPOSAL-NOT-FOUND))
+    (status (check-proposal-status proposal-id))
+  )
+    (asserts! (is-member tx-sender) ERR-NOT-MEMBER)
+    (asserts! (is-eq status "approved") ERR-PROPOSAL-NOT-APPROVED)
+    (asserts! (calculate-quorum proposal-id) ERR-QUORUM-NOT-REACHED)
+    
+    (map-set proposals { proposal-id: proposal-id }
+      (merge proposal { status: "executed" })
+    )
+    (ok true)
+  )
+)
+
+(define-read-only (get-proposal (proposal-id uint))
+  (map-get? proposals { proposal-id: proposal-id })
+)
+
+(define-read-only (get-member-stake (member principal))
+  (default-to u0 (map-get? members member))
+)
+
+(define-read-only (get-total-stake)
+  (var-get total-stake)
+)
+
+(define-read-only (get-proposal-count)
+  (var-get proposal-count)
+)
+
+(define-read-only (get-proposal-status (proposal-id uint))
+  (check-proposal-status proposal-id)
 )
