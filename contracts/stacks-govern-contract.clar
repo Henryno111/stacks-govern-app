@@ -1,5 +1,5 @@
 
-;; governance-dao-contract
+;; Stacks-dao-contract
 ;; A DAO governance contract that allows members to create, vote on, and execute proposals
 
 ;; constants
@@ -51,6 +51,40 @@
 
 ;; private functions
 ;;
+(define-private (is-dao-owner)
+  (is-eq tx-sender (var-get dao-owner))
+)
+
+(define-private (is-member (user principal))
+  (> (default-to u0 (map-get? members user)) u0)
+)
+
+(define-private (check-proposal-status (proposal-id uint))
+  (match (map-get? proposals { proposal-id: proposal-id })
+    proposal (let (
+      (current-block block-height)
+    )
+      (if (> current-block (get expires-at-block proposal))
+        (if (>= (get yes-votes proposal) (get no-votes proposal))
+          "approved"
+          "rejected"
+        )
+        (get status proposal)
+      ))
+    "not-found"
+  )
+)
+
+(define-private (calculate-quorum (proposal-id uint))
+  (match (map-get? proposals { proposal-id: proposal-id })
+    proposal (let (
+      (total-votes (+ (get yes-votes proposal) (get no-votes proposal)))
+      (quorum-threshold (/ (* (var-get total-stake) QUORUM-PERCENTAGE) u100))
+    )
+      (>= total-votes quorum-threshold))
+    false
+  )
+)
 
 ;; public functions
 ;;
